@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional, Union
+from typing import Literal, Optional
 
-import pytest
 
 from tool_schema_from_fn import (
     openai_function,
@@ -25,7 +24,10 @@ def test_primitives():
 
 
 def test_list_of_str():
-    assert type_to_json_schema(list[str]) == {"type": "array", "items": {"type": "string"}}
+    assert type_to_json_schema(list[str]) == {
+        "type": "array",
+        "items": {"type": "string"},
+    }
 
 
 def test_dict_str_int():
@@ -164,6 +166,29 @@ def test_tool_schema_optional_param_not_required():
     assert s["input_schema"]["required"] == ["q"]
     # `page` is Optional → schema is plain int (None stripped)
     assert s["input_schema"]["properties"]["page"]["type"] == "integer"
+    # A `None` default is the "unset" sentinel — it should NOT surface as
+    # `"default": null`, which would mislead the LLM into passing null.
+    assert "default" not in s["input_schema"]["properties"]["page"]
+
+
+def test_tool_schema_none_default_omitted_but_real_default_kept():
+    def f(a: int = 5, b: str = None):
+        """f.
+
+        Args:
+            a: a number with a real default
+            b: an optional string defaulting to None
+        """
+        ...
+
+    s = tool_schema(f)
+    props = s["input_schema"]["properties"]
+    # A real (non-None) default is reflected.
+    assert props["a"]["default"] == 5
+    # A None default is omitted entirely.
+    assert "default" not in props["b"]
+    # Neither is required (both have defaults).
+    assert "required" not in s["input_schema"]
 
 
 def test_tool_schema_explicit_name_and_description():
@@ -192,12 +217,10 @@ def test_tool_schema_skip_params():
 
 def test_tool_schema_skips_self_and_cls():
     class Tools:
-        def method(self, q: str):
-            ...
+        def method(self, q: str): ...
 
         @classmethod
-        def klass(cls, q: str):
-            ...
+        def klass(cls, q: str): ...
 
     s_m = tool_schema(Tools.method)
     assert "self" not in s_m["input_schema"]["properties"]
@@ -206,16 +229,14 @@ def test_tool_schema_skips_self_and_cls():
 
 
 def test_tool_schema_skips_var_args_and_kwargs():
-    def f(q: str, *args, **kwargs):
-        ...
+    def f(q: str, *args, **kwargs): ...
 
     s = tool_schema(f)
     assert set(s["input_schema"]["properties"]) == {"q"}
 
 
 def test_tool_schema_with_list_and_dict_annotations():
-    def f(items: list[str], meta: dict[str, int] = None):
-        ...
+    def f(items: list[str], meta: dict[str, int] = None): ...
 
     s = tool_schema(f)
     props = s["input_schema"]["properties"]
@@ -224,16 +245,14 @@ def test_tool_schema_with_list_and_dict_annotations():
 
 
 def test_tool_schema_required_only_when_no_default_and_not_optional():
-    def f(a: str, b: int = 5, c: Optional[float] = None, d: str = "x"):
-        ...
+    def f(a: str, b: int = 5, c: Optional[float] = None, d: str = "x"): ...
 
     s = tool_schema(f)
     assert s["input_schema"]["required"] == ["a"]
 
 
 def test_tool_schema_no_required_section_when_empty():
-    def f(a: str = "x"):
-        ...
+    def f(a: str = "x"): ...
 
     s = tool_schema(f)
     assert "required" not in s["input_schema"]

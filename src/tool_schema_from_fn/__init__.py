@@ -149,7 +149,7 @@ def parse_google_docstring(docstring: str | None) -> tuple[str, dict[str, str]]:
     first_header = _DESCRIPTION_HEADERS.search(cleaned)
     if first_header:
         top = cleaned[: first_header.start()].strip()
-        rest = cleaned[first_header.start():]
+        rest = cleaned[first_header.start() :]
     else:
         top = cleaned.strip()
         rest = ""
@@ -159,7 +159,7 @@ def parse_google_docstring(docstring: str | None) -> tuple[str, dict[str, str]]:
     if not args_match:
         return top, arg_descs
 
-    body = rest[args_match.end():]
+    body = rest[args_match.end() :]
     # stop at the next header
     next_section = _DESCRIPTION_HEADERS.search(body)
     if next_section:
@@ -240,7 +240,13 @@ def tool_schema(
             schema["description"] = desc
 
         if param.default is not inspect.Parameter.empty:
-            schema["default"] = param.default
+            # A `None` default is the "no value supplied" sentinel for an
+            # optional param; surfacing `"default": null` would tell the LLM
+            # the parameter's default value is literally null. Mark it
+            # not-required (handled by omission from `required`) but don't
+            # emit a null default.
+            if param.default is not None:
+                schema["default"] = param.default
         else:
             # required if no default AND not optional in the type
             if not _is_optional(ann):
